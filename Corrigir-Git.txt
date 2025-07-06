@@ -1,0 +1,114 @@
+<#
+.SYNOPSIS
+    Script de verificação e correção do Git no sistema Windows via PowerShell.
+
+.DESCRIPTION
+    Este script verifica se o Git está acessível através do PATH do sistema. Caso não esteja,
+    ele procura a instalação do Git em locais comuns e, se encontrar, adiciona o caminho
+    correto ao PATH do sistema (variável de ambiente da máquina), exigindo privilégios de administrador.
+
+.NOTES
+    Autor: Cláudio Francisco dos Santos Júnior (Versão Original) / Gemini (Versão Revisada)
+    Versão: 2.0
+    Compatibilidade: Windows 10/11 | PowerShell 5.1+
+    Execução: Requer execução como Administrador para modificar o PATH do sistema.
+#>
+
+# --- Bloco de Verificação de Permissões ---
+# Este script precisa ser executado como Administrador para alterar as variáveis de ambiente do sistema.
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Warning "Este script precisa ser executado com privilégios de Administrador para funcionar."
+    Write-Warning "Por favor, clique com o botão direito no script e selecione 'Executar como Administrador'."
+    # Pausa a execução se não for admin, para o usuário poder ler a mensagem.
+    if ($Host.Name -eq "ConsoleHost") {
+        Read-Host "Pressione Enter para sair..."
+    }
+    exit
+}
+
+# --- Funções Auxiliares ---
+
+function Encontrar-CaminhoGit {
+    <#
+    .SYNOPSIS
+        Tenta localizar o diretório 'cmd' da instalação do Git.
+    #>
+    Write-Host "🔎 Procurando pela pasta de instalação do Git..." -ForegroundColor Gray
+
+    # Lista de caminhos comuns para a instalação do Git
+    $caminhosComuns = @(
+        "$env:ProgramFiles\Git\cmd",
+        "$env:ProgramFiles(x86)\Git\cmd",
+        "$env:LOCALAPPDATA\Programs\Git\cmd"
+    )
+
+    # Procura nos caminhos comuns
+    foreach ($caminho in $caminhosComuns) {
+        if (Test-Path -Path $caminho -PathType Container) {
+            Write-Host "✔️ Encontrado em: $caminho" -ForegroundColor Green
+            return $caminho
+        }
+    }
+
+    Write-Host "❌ Pasta 'cmd' do Git não encontrada nos diretórios padrão." -ForegroundColor Red
+    return $null
+}
+
+function Adicionar-AoPATH([string]$caminhoGit) {
+    <#
+    .SYNOPSIS
+        Adiciona o caminho do Git ao PATH do sistema (Máquina).
+    #>
+    try {
+        # Obtém o PATH atual da Máquina
+        $pathAtual = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+
+        if ($pathAtual -notlike "*$caminhoGit*") {
+            Write-Host "⚙️  Adicionando '$caminhoGit' ao PATH do sistema..." -ForegroundColor Yellow
+            
+            # Constrói o novo PATH, garantindo que não haja ponto e vírgula duplo
+            $novoPATH = ($pathAtual.TrimEnd(";") + ";" + $caminhoGit)
+            
+            # Define a variável de ambiente para a Máquina
+            [Environment]::SetEnvironmentVariable("Path", $novoPATH, [EnvironmentVariableTarget]::Machine)
+            
+            Write-Host "✅ Sucesso! O caminho foi adicionado ao PATH do sistema." -ForegroundColor Green
+            Write-Host "🔁 IMPORTANTE: Você precisa reiniciar seu terminal (ou o computador) para que as alterações tenham efeito." -ForegroundColor Cyan
+        } else {
+            Write-Host "ℹ️ O caminho '$caminhoGit' já existe no PATH do sistema. Nenhuma ação necessária." -ForegroundColor Cyan
+        }
+    }
+    catch {
+        Write-Error "Ocorreu um erro ao tentar modificar o PATH do sistema: $_"
+    }
+}
+
+
+# --- Bloco Principal de Execução ---
+
+Write-Host "`n--- Verificador e Corretor de PATH do Git ---`n" -ForegroundColor White
+
+# 1. Verifica se o comando 'git' já está disponível
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $versao = git --version
+    Write-Host "✅ Git já está configurado e funcional no terminal." -ForegroundColor Green
+    Write-Host "   $versao"
+}
+else {
+    Write-Host "⚠️ O comando 'git' não foi encontrado no seu terminal atual." -ForegroundColor Yellow
+    
+    # 2. Se não estiver disponível, tenta encontrar a instalação
+    $caminhoGitEncontrado = Encontrar-CaminhoGit
+    
+    if ($caminhoGitEncontrado) {
+        # 3. Se encontrou, adiciona ao PATH
+        Adicionar-AoPATH -caminhoGit $caminhoGitEncontrado
+    }
+    else {
+        # 4. Se não encontrou, informa o usuário
+        Write-Host "❌ Não foi possível localizar a instalação do Git no seu sistema." -ForegroundColor Red
+        Write-Host "   Por favor, verifique se o Git está instalado. Você pode baixá-lo em: https://git-scm.com/" -ForegroundColor White
+    }
+}
+
+Write-Host "`n--- Verificação Concluída ---`n" -ForegroundColor White
